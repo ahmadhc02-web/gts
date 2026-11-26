@@ -1012,7 +1012,7 @@ const ComplaintList = React.memo(function ComplaintList({
             </button>
 
             {/* Split status filters pill toggler */}
-            <div className="flex !bg-white dark:!bg-[#23262d] p-1 rounded-xl border border-slate-200/90 dark:border-white/10 shadow-[0_2px_8px_rgba(15,23,42,0.06)] dark:shadow-[var(--neu-shadow-inset)]">
+            <div className="flex flex-wrap max-w-full !bg-white dark:!bg-[#23262d] p-1 rounded-xl border border-slate-200/90 dark:border-white/10 shadow-[0_2px_8px_rgba(15,23,42,0.06)] dark:shadow-[var(--neu-shadow-inset)]">
               <button
                 onClick={() => setStatusFilter('all')}
                 className={cn(
@@ -1226,7 +1226,7 @@ const ComplaintList = React.memo(function ComplaintList({
         animate={{ opacity: 1, y: 0 }}
         className="overflow-hidden rounded-2xl !bg-white dark:!bg-[#2c3038] border border-slate-200/80 dark:border-white/10 !shadow-[0_8px_24px_rgba(15,23,42,0.11),6px_0_18px_-3px_rgba(15,23,42,0.10),-6px_0_18px_-3px_rgba(15,23,42,0.10)] dark:!shadow-[0_8px_24px_rgba(0,0,0,0.50),6px_0_18px_-2px_rgba(0,0,0,0.44),-6px_0_18px_-2px_rgba(0,0,0,0.44)]"
       >
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto gts-scroll-xy">
           <table className="w-full table-fixed text-left border-collapse min-w-[1250px]">
             <colgroup>
               <col className="w-[290px]" />

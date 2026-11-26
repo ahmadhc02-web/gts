@@ -1,4 +1,5 @@
 import React from 'react';
+import { cn } from '../lib/utils';
 
 export default function PakistaniFlagBackground({ children, className = '' }: { children?: React.ReactNode, className?: string }) {
   const today = new Date();
@@ -8,14 +9,14 @@ export default function PakistaniFlagBackground({ children, className = '' }: { 
 
   if (!isIndependencePeriod) {
     return (
-      <div className={`relative w-full h-full min-h-screen flex flex-col overflow-x-hidden ${className}`}>
+      <div className={cn("relative w-full h-full min-h-screen flex flex-col overflow-x-clip", className)}>
         {children}
       </div>
     );
   }
 
   return (
-    <div className={`relative w-full h-full min-h-screen flex flex-col overflow-x-hidden ${className}`}>
+    <div className={cn("relative w-full h-full min-h-screen flex flex-col overflow-x-clip", className)}>
       {/* Background Flag Gradient Layer */}
       <div className="fixed inset-0 z-0 pointer-events-none flex opacity-90 dark:opacity-60">
         {/* Left white section - 25% width, very subtle */}

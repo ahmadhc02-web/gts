@@ -587,7 +587,7 @@ const BillingTab = React.memo(function BillingTab(props: BillingTabProps) {
 
   return (
 
-          <div className="max-w-[115rem] mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-[115rem] mx-auto space-y-6 px-3 sm:px-6 lg:px-8 min-w-0 w-full">
             {/* Configure New Month Popup-card Block */}
             <AnimatePresence>
               {!forceViewOnly && isConfiguringNewMonth && (
@@ -1032,7 +1032,7 @@ const BillingTab = React.memo(function BillingTab(props: BillingTabProps) {
                       ref={billingScrollContainerRef}
                       onMouseMove={handleBillingMouseMove}
                       onMouseLeave={handleBillingMouseLeave}
-                      className="overflow-x-auto"
+                      className="overflow-x-auto gts-scroll-xy"
                     >
                       <table id="billing-spreadsheet-table" className="w-full table-fixed border-collapse text-left text-xs text-slate-950 dark:text-slate-100">
                         <thead>
@@ -2114,7 +2114,7 @@ const BillingTab = React.memo(function BillingTab(props: BillingTabProps) {
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden">
                     {displayedBillingRows.map((rowRef, localIdx) => {
                       const globalRowIdx = rowRef._originalIndex;
                       if (globalRowIdx === undefined || globalRowIdx === -1) return null;
@@ -2462,7 +2462,7 @@ const BillingTab = React.memo(function BillingTab(props: BillingTabProps) {
                       
                       {/* Desktop DC Table */}
                       {isDesktop ? (
-                        <div className="hidden md:block overflow-x-auto relative">
+                        <div className="hidden md:block overflow-x-auto gts-scroll-xy relative">
                         <table className="w-full text-left table-fixed whitespace-nowrap">
                           {/* We don't have thead easily accessible, let's copy it from earlier */}
                           <thead className="bg-[var(--neu-surface)] shadow-[0_2px_4px_-1px_rgba(0,0,0,0.05)] border-b-2 border-slate-300 dark:border-slate-700">
@@ -3254,6 +3254,7 @@ const BillingTab = React.memo(function BillingTab(props: BillingTabProps) {
                     type="button"
                     onClick={() => {
                       setIsConfiguringNewMonth(true);
+                      document.getElementById('gts-main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-[var(--neu-shadow-raised-lg)] shadow-emerald-600/20 flex items-center gap-2 cursor-pointer"

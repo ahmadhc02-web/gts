@@ -23,7 +23,9 @@ import {
   resetBillingColumnVisibility,
   getBillingStatusVisibility,
   saveBillingStatusVisibility,
-  resetBillingStatusVisibility
+  resetBillingStatusVisibility,
+  subscribeToBillingColumnVisibility,
+  subscribeToBillingStatusVisibility
 } from '../utils/billingColumnsConfig';
 import { cn } from '../lib/utils';
 
@@ -42,6 +44,18 @@ export default function BillingModSettingView({ onNavigateToBilling }: BillingMo
   useEffect(() => {
     setColumnVisibility(getBillingColumnVisibility());
     setStatusVisibility(getBillingStatusVisibility());
+
+    const unsubCols = subscribeToBillingColumnVisibility(vis => {
+      setColumnVisibility(vis);
+    });
+    const unsubStatus = subscribeToBillingStatusVisibility(vis => {
+      setStatusVisibility(vis);
+    });
+
+    return () => {
+      unsubCols();
+      unsubStatus();
+    };
   }, []);
 
   const visibleCount = Object.values(columnVisibility).filter(Boolean).length;

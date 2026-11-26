@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from './supabase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget, ComplaintReview, ReminderLead, ReminderLeadItem } from '../types';
 import { toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, ensurePermanentStatuses } from '../constants';
@@ -828,13 +828,14 @@ function mergeWithCache(fetchedRows: any[], cacheRows: any[]): any[] {
 
 // Requirement 1: Helper fetchAllPages(buildQuery) fetching all rows in pages of 1000
 async function fetchAllPages(
-  buildQuery: () => any
+  buildQuery: () => any,
+  preferIdOrder: boolean = false
 ): Promise<{ data: any[]; error: any; pageCount: number }> {
   const PAGE_SIZE = 1000;
   const MAX_PAGES = 50;
   let allRecords: any[] = [];
   let pageIndex = 0;
-  let orderStrategy: 'created_at_desc_id' | 'created_at_only' | 'id_only' | 'none' = 'created_at_desc_id';
+  let orderStrategy: 'created_at_desc_id' | 'created_at_only' | 'id_only' | 'none' = preferIdOrder ? 'id_only' : 'created_at_desc_id';
 
   while (pageIndex < MAX_PAGES) {
     const from = allRecords.length;
@@ -891,6 +892,9 @@ async function fetchAllPages(
 
     allRecords.push(...rows);
     pageIndex++;
+    if (rows.length < PAGE_SIZE) {
+      break;
+    }
   }
 
   return { data: allRecords, error: null, pageCount: Math.max(1, pageIndex) };
@@ -2331,32 +2335,33 @@ export const supabaseService = {
 
       // Requirement 1: billing_rows is the source of truth. ALWAYS read billing_rows and overlay on blob rows
       try {
-        let query = supabase.from('billing_rows').select('*');
-        if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
-          query = query.eq('dealer_id', dealerId);
-        }
-        const cleanBypass = typeof effectiveBypass === 'string' ? String(effectiveBypass || '').trim() : '';
-        const cleanActive = String(activeLineCode || '').trim();
-        if (effectiveBypass === true || effectiveBypass === 'all') {
-          // Explicitly query all lines across network
-        } else if (cleanBypass === '__without_line__' || effectiveBypass === null) {
-          query = query.or('line_code.is.null,line_code.eq.');
-        } else if (cleanBypass) {
-          query = query.eq('line_code', cleanBypass);
-        } else if (cleanActive) {
-          query = query.eq('line_code', cleanActive);
-        } else {
-          query = query.or('line_code.is.null,line_code.eq.');
-        }
-
         const candidateMonthIds = Array.from(monthMap.keys());
-        if (candidateMonthIds.length > 0) {
-          query = query.in('month_id', candidateMonthIds);
-        } else {
-          query = query.order('created', { ascending: false }).limit(2000);
-        }
+        const buildRowsQuery = () => {
+          let query = supabase.from('billing_rows').select('*');
+          if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+            query = query.eq('dealer_id', dealerId);
+          }
+          const cleanBypass = typeof effectiveBypass === 'string' ? String(effectiveBypass || '').trim() : '';
+          const cleanActive = String(activeLineCode || '').trim();
+          if (effectiveBypass === true || effectiveBypass === 'all') {
+            // Explicitly query all lines across network
+          } else if (cleanBypass === '__without_line__' || effectiveBypass === null) {
+            query = query.or('line_code.is.null,line_code.eq.');
+          } else if (cleanBypass) {
+            query = query.eq('line_code', cleanBypass);
+          } else if (cleanActive) {
+            query = query.eq('line_code', cleanActive);
+          } else {
+            query = query.or('line_code.is.null,line_code.eq.');
+          }
 
-        const { data: rowRecords } = await query;
+          if (candidateMonthIds.length > 0) {
+            query = query.in('month_id', candidateMonthIds);
+          }
+          return query;
+        };
+
+        const { data: rowRecords } = await fetchAllPages(buildRowsQuery, true);
         if (rowRecords && rowRecords.length > 0) {
           const rowsByMonth = new Map<string, any[]>();
           for (const r of rowRecords) {
@@ -2537,25 +2542,28 @@ export const supabaseService = {
         } catch (err) {}
 
         try {
-          let query = supabase.from('billing_rows').select('*').eq('month_id', monthId);
-          if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
-            query = query.eq('dealer_id', dealerId);
-          }
-          const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
-          const cleanActive = String(activeLineCode || '').trim();
-          if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
-            // Explicitly query all lines across network
-          } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
-            query = query.or('line_code.is.null,line_code.eq.');
-          } else if (cleanBypass) {
-            query = query.eq('line_code', cleanBypass);
-          } else if (cleanActive) {
-            query = query.eq('line_code', cleanActive);
-          } else {
-            query = query.or('line_code.is.null,line_code.eq.');
-          }
+          const buildRowsQuery = () => {
+            let query = supabase.from('billing_rows').select('*').eq('month_id', monthId);
+            if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+              query = query.eq('dealer_id', dealerId);
+            }
+            const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+            const cleanActive = String(activeLineCode || '').trim();
+            if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+              // Explicitly query all lines across network
+            } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+              query = query.or('line_code.is.null,line_code.eq.');
+            } else if (cleanBypass) {
+              query = query.eq('line_code', cleanBypass);
+            } else if (cleanActive) {
+              query = query.eq('line_code', cleanActive);
+            } else {
+              query = query.or('line_code.is.null,line_code.eq.');
+            }
+            return query;
+          };
 
-          const { data: rowRecords } = await query;
+          const { data: rowRecords } = await fetchAllPages(buildRowsQuery, true);
           if (rowRecords && rowRecords.length > 0) {
             const rowsByMonth = new Map<string, any[]>();
             for (const r of rowRecords) {
@@ -2707,19 +2715,25 @@ export const supabaseService = {
 
   getBillingMonthRowsDirect: async (monthId: string, dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
     try {
-      let query = supabase.from('billing_rows').select('*').eq('month_id', monthId).eq('dealer_id', dealerId);
-      
+      const buildRowsQuery = () => {
+        let query = supabase.from('billing_rows').select('*').eq('month_id', monthId).eq('dealer_id', dealerId);
         const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
         const cleanActive = String(activeLineCode || '').trim();
-        if (bypassLineCodeFilter === true) {
+        if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
           // no filter
+        } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+          query = query.or('line_code.is.null,line_code.eq.');
         } else if (cleanBypass) {
           query = query.eq('line_code', cleanBypass);
         } else if (cleanActive) {
           query = query.eq('line_code', cleanActive);
+        } else {
+          query = query.or('line_code.is.null,line_code.eq.');
         }
+        return query;
+      };
 
-      const { data: records } = await query;
+      const { data: records } = await fetchAllPages(buildRowsQuery, true);
       if (records && records.length > 0) {
         return records.filter(r => !isExcludedFromRecovery(r.name, r.username)).map(r => ({
           id: r.client_id || r.id,
@@ -2902,12 +2916,18 @@ export const supabaseService = {
   getBillingMonthDirect: async (monthId: string, dealerId: string = 'main') => {
     try {
       if (!supabase) return null;
-      const { data } = await supabase
+      let bmQuery = supabase
         .from('billing_months')
         .select('*')
         .eq('month_id', monthId)
-        .eq('dealer_id', dealerId)
-        .maybeSingle();
+        .eq('dealer_id', dealerId || 'main');
+      const cleanActive = String(activeLineCode || '').trim();
+      if (cleanActive) {
+        bmQuery = bmQuery.eq('line_code', cleanActive);
+      } else {
+        bmQuery = bmQuery.or('line_code.is.null,line_code.eq.');
+      }
+      const { data } = await bmQuery.limit(1).maybeSingle();
 
       let blobRows: any[] = [];
       let excludedClientKeys: string[] = [];
@@ -3255,16 +3275,8 @@ export const supabaseService = {
               .maybeSingle();
 
             if (dbData && dbData.rows_data) {
-              let existingRows = dbData.rows_data;
-              if (typeof existingRows === 'string') {
-                try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
-              }
-              if (existingRows && typeof existingRows === 'object' && !Array.isArray(existingRows) && 'rows' in existingRows) {
-                if (Array.isArray(existingRows.rows)) {
-                  existingRows = existingRows.rows;
-                }
-              }
-              if (Array.isArray(existingRows)) {
+              const existingRows = parseRowsData(dbData.rows_data);
+              if (Array.isArray(existingRows) && existingRows.length > 0) {
                 existingRowsParsed = existingRows;
                 dbTotal = existingRows.length;
                 dbPaidCount = countRecordedPaymentRows(existingRows);
@@ -3543,109 +3555,366 @@ export const supabaseService = {
     }
   },
 
-  async setBillingRowSwitches(monthId: string, dealerId: string = 'main', updates: { clientId: string, username?: string, on: boolean }[]) {
-    if (!Array.isArray(updates) || updates.length === 0) return;
-    const onIds: string[] = [];
-    const offIds: string[] = [];
-    const clientIdToUpdateMap = new Map<string, { clientId: string, username?: string, on: boolean }>();
-    
-    updates.forEach(u => {
+  async setBillingRowSwitches(
+    monthId: string,
+    dealerId: string = 'main',
+    updates: { clientId: string; username?: string; on: boolean; rowData?: any }[]
+  ) {
+    if (!monthId || !Array.isArray(updates) || updates.length === 0) return;
+    if (!supabase) throw new Error('Supabase client not initialized');
+
+    const resolvedDealer = dealerId || 'main';
+    const nowIso = new Date().toISOString();
+    const cleanActiveLc = String(activeLineCode || '').trim();
+
+    // Deduplicate by normalized clientId (last write wins)
+    const dedupedMap = new Map<string, { clientId: string; username?: string; on: boolean; rowData?: any }>();
+    for (const u of updates) {
       const cid = String(u.clientId || '').trim();
-      if (!cid) return;
-      clientIdToUpdateMap.set(cid, u);
-      if (u.on) {
-        if (!onIds.includes(cid)) onIds.push(cid);
-      } else {
-        if (!offIds.includes(cid)) offIds.push(cid);
-      }
-    });
+      if (!cid) continue;
+      dedupedMap.set(cid, { ...u, clientId: cid, on: Boolean(u.on) });
+    }
+    const dedupedUpdates = Array.from(dedupedMap.values());
+    if (dedupedUpdates.length === 0) return;
 
-    const chunkArray = (arr: string[], size: number) => {
-      const res: string[][] = [];
+    const chunkArray = <T,>(arr: T[], size: number): T[][] => {
+      const chunks: T[][] = [];
       for (let i = 0; i < arr.length; i += size) {
-        res.push(arr.slice(i, i + size));
+        chunks.push(arr.slice(i, i + size));
       }
-      return res;
-    };
-
-    const updatedClientIds = new Set<string>();
-
-    const processGroup = async (ids: string[], onVal: boolean) => {
-      if (ids.length === 0) return;
-      const chunks = chunkArray(ids, 200);
-      for (const chunk of chunks) {
-        const query = supabase
-          .from('billing_rows')
-          .update({ switch_on: onVal })
-          .eq('month_id', monthId)
-          .eq('dealer_id', dealerId || 'main')
-          .in('client_id', chunk)
-          .select('client_id');
-        
-        const res: any = await withTimeout((async () => await query)(), 15000, `Set billing row switches (${onVal ? 'ON' : 'OFF'})`);
-        const data = res?.data;
-        const error = res?.error;
-        if (error) {
-          throw new Error(error.message || 'Failed to update billing row switches');
-        }
-        if (Array.isArray(data)) {
-          data.forEach((d: any) => {
-            const cId = d.client_id || d.clientId;
-            if (cId) updatedClientIds.add(String(cId));
-          });
-        }
-      }
+      return chunks;
     };
 
     try {
-      await Promise.all([
-        processGroup(onIds, true),
-        processGroup(offIds, false)
-      ]);
+      // 1. Fast parallel chunked update directly on billing_rows.switch_on
+      const onIds = dedupedUpdates.filter(u => u.on).map(u => u.clientId);
+      const offIds = dedupedUpdates.filter(u => !u.on).map(u => u.clientId);
+      const matchedClientIds = new Set<string>();
 
-      const missingUpdates = updates.filter(u => {
-        const cid = String(u.clientId || '').trim();
-        return cid && !updatedClientIds.has(cid);
-      });
+      const runSwitchBatch = async (ids: string[], switchVal: boolean) => {
+        if (ids.length === 0) return;
+        const chunks = chunkArray(ids, 100);
+        await Promise.all(chunks.map(async (chunk) => {
+          const { data: updatedRows, error: updateErr } = await supabase
+            .from('billing_rows')
+            .update({ switch_on: switchVal, updated: nowIso })
+            .eq('month_id', monthId)
+            .eq('dealer_id', resolvedDealer)
+            .in('client_id', chunk)
+            .select('client_id');
 
-      if (missingUpdates.length > 0) {
-        const monthData: any = await this.getBillingMonthDirect(monthId, dealerId || 'main');
-        let currentRows: any[] = [];
-        if (monthData && Array.isArray(monthData.rows)) {
-          currentRows = monthData.rows;
-        } else if (monthData && monthData.rows_data) {
-          let rd = monthData.rows_data;
-          if (typeof rd === 'string') {
-            try { rd = JSON.parse(rd); } catch {}
+          if (updateErr) {
+            throw new Error(updateErr.message || 'Failed updating billing_rows switch_on');
           }
-          if (rd && typeof rd === 'object' && !Array.isArray(rd) && 'rows' in rd) {
-            rd = rd.rows;
-          }
-          if (Array.isArray(rd)) {
-            currentRows = rd;
-          }
-        }
-        const missingClientIds = new Set(missingUpdates.map(m => String(m.clientId).trim()));
-        const missingIndices: number[] = [];
-        currentRows.forEach((r: any, idx: number) => {
-          const cid = String(r.clientId || r.client_id || r.id || '').trim();
-          if (cid && missingClientIds.has(cid)) {
-            const up = clientIdToUpdateMap.get(cid);
-            if (up) {
-              r.switchOn = up.on;
-              r.switch_on = up.on;
-              missingIndices.push(idx);
+          if (Array.isArray(updatedRows)) {
+            for (const row of updatedRows) {
+              if (row && row.client_id !== undefined && row.client_id !== null) {
+                matchedClientIds.add(String(row.client_id).trim());
+              }
             }
           }
-        });
-        if (missingIndices.length > 0) {
-          await this.syncBillingRows(monthId, dealerId || 'main', currentRows, missingIndices);
+        }));
+      };
+
+      await Promise.all([runSwitchBatch(onIds, true), runSwitchBatch(offIds, false)]);
+
+      // 2. For any rows not yet matched (e.g. dealer_id mismatch or composite id), try matching by month_id + client_id and composite id first, then upsert
+      let missingUpdates = dedupedUpdates.filter(u => !matchedClientIds.has(u.clientId));
+      if (missingUpdates.length > 0) {
+        const missingOnCids = missingUpdates.filter(u => u.on).map(u => u.clientId);
+        const missingOffCids = missingUpdates.filter(u => !u.on).map(u => u.clientId);
+
+        const runByMonthClientBatch = async (cids: string[], switchVal: boolean) => {
+          if (cids.length === 0) return;
+          const chunks = chunkArray(cids, 100);
+          await Promise.all(chunks.map(async (chunk) => {
+            const { data: updatedByCid, error: byCidErr } = await supabase
+              .from('billing_rows')
+              .update({ switch_on: switchVal, updated: nowIso })
+              .eq('month_id', monthId)
+              .in('client_id', chunk)
+              .select('client_id');
+
+            if (byCidErr) {
+              throw new Error(byCidErr.message || 'Failed updating billing_rows by month_id+client_id');
+            }
+            if (Array.isArray(updatedByCid)) {
+              for (const row of updatedByCid) {
+                if (row && row.client_id !== undefined && row.client_id !== null) {
+                  matchedClientIds.add(String(row.client_id).trim());
+                }
+              }
+            }
+          }));
+        };
+
+        await Promise.all([runByMonthClientBatch(missingOnCids, true), runByMonthClientBatch(missingOffCids, false)]);
+        missingUpdates = dedupedUpdates.filter(u => !matchedClientIds.has(u.clientId));
+      }
+
+      if (missingUpdates.length > 0) {
+        const missingOnRowIds = missingUpdates.filter(u => u.on).map(u => `${monthId}_${u.clientId}`);
+        const missingOffRowIds = missingUpdates.filter(u => !u.on).map(u => `${monthId}_${u.clientId}`);
+
+        const runByIdBatch = async (rowIds: string[], switchVal: boolean) => {
+          if (rowIds.length === 0) return;
+          const chunks = chunkArray(rowIds, 100);
+          await Promise.all(chunks.map(async (chunk) => {
+            const { data: updatedById, error: byIdErr } = await supabase
+              .from('billing_rows')
+              .update({ switch_on: switchVal, updated: nowIso })
+              .in('id', chunk)
+              .select('client_id');
+
+            if (byIdErr) {
+              throw new Error(byIdErr.message || 'Failed updating billing_rows by id');
+            }
+            if (Array.isArray(updatedById)) {
+              for (const row of updatedById) {
+                if (row && row.client_id !== undefined && row.client_id !== null) {
+                  matchedClientIds.add(String(row.client_id).trim());
+                }
+              }
+            }
+          }));
+        };
+
+        await Promise.all([runByIdBatch(missingOnRowIds, true), runByIdBatch(missingOffRowIds, false)]);
+        missingUpdates = dedupedUpdates.filter(u => !matchedClientIds.has(u.clientId));
+      }
+
+      // Build cached row lookup so upserted missing rows retain full metadata (line_code, name, etc.)
+      const cachedRowMap = new Map<string, any>();
+      const lcKey = cleanActiveLc || 'nolc';
+      const candidateCacheKeys = [
+        `billing_months_${dealerId || 'all'}_${lcKey}`,
+        `billing_months_all_${lcKey}`,
+        `billing_months_main_${lcKey}`,
+        `billing_months_${resolvedDealer}_${lcKey}`
+      ];
+      for (const ck of candidateCacheKeys) {
+        const list = globalTableCaches[ck];
+        if (Array.isArray(list)) {
+          const mDoc = list.find((m: any) => (m?.id || m?.month_id) === monthId);
+          if (mDoc && Array.isArray(mDoc.rows)) {
+            for (const r of mDoc.rows) {
+              const rCid = String(r.clientId || r.client_id || r.id || '').trim();
+              if (rCid && !cachedRowMap.has(rCid)) {
+                cachedRowMap.set(rCid, r);
+              }
+            }
+          }
         }
       }
+
+      if (missingUpdates.length > 0) {
+        const upsertRows = missingUpdates.map(u => {
+          const r = u.rowData || cachedRowMap.get(u.clientId) || {};
+          const sanitizeNum = (v: any) => {
+            const n = Number(v);
+            return isNaN(n) ? 0 : n;
+          };
+          return {
+            id: `${monthId}_${u.clientId}`,
+            month_id: monthId,
+            dealer_id: resolvedDealer,
+            client_id: u.clientId,
+            name: String(r.name || ''),
+            username: String(u.username || r.username || ''),
+            mobile_number: String(r.mobileNumber || r.mobile_number || r.mobile || ''),
+            area: String(r.area || ''),
+            rt: String(r.rt || ''),
+            base_amount: sanitizeNum(r.baseAmount ?? r.base_amount ?? r.amount),
+            cr: sanitizeNum(r.cr),
+            total_amount: sanitizeNum(r.totalAmount ?? r.total_amount),
+            billing_day: String(r.billingDay || r.billing_day || '5'),
+            payment_received: sanitizeNum(r.paymentReceived ?? r.payment_received),
+            payment_status: String(r.paymentStatus || r.payment_status || 'unpaid'),
+            comments: String(r.comments || ''),
+            occ: String(r.occ || ''),
+            pkg_details: String(r.pkgDetails || r.pkg_details || ''),
+            sag: String(r.sag || ''),
+            lai: String(r.lai || ''),
+            connection_date: String(r.connectionDate || r.connection_date || ''),
+            device_price: sanitizeNum(r.devicePrice ?? r.device_price),
+            abl: sanitizeNum(r.abl),
+            panel_details: String(r.panelDetails || r.panel_details || ''),
+            line_code: String(r.lineCode || r.line_code || cleanActiveLc || ''),
+            line_id: r.lineId || r.line_id || activeLineId || null,
+            switch_on: u.on,
+            updated: nowIso
+          };
+        });
+
+        const upsertChunks = chunkArray(upsertRows, 100);
+        await Promise.all(upsertChunks.map(async (chunk) => {
+          const { error: upsertErr } = await supabase
+            .from('billing_rows')
+            .upsert(chunk, { onConflict: 'id' });
+          if (upsertErr) {
+            throw new Error(upsertErr.message || 'Failed upserting billing_rows switch_on');
+          }
+        }));
+      }
+
+      // 3. Synchronize local in-memory and localStorage caches immediately
+      const switchMapByCid = new Map(dedupedUpdates.map(u => [u.clientId, u.on]));
+      const switchMapByUsername = new Map(
+        dedupedUpdates
+          .filter(u => u.username && String(u.username).trim() !== '')
+          .map(u => [String(u.username).trim().toLowerCase(), u.on])
+      );
+
+      for (const ck of Array.from(new Set(candidateCacheKeys))) {
+        try {
+          let list = globalTableCaches[ck];
+          if (!Array.isArray(list)) {
+            const raw = localStorage.getItem(`gts_cache_v3_${ck}`);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) list = parsed;
+            }
+          }
+          if (Array.isArray(list)) {
+            const mIdx = list.findIndex((m: any) => (m?.id || m?.month_id) === monthId);
+            if (mIdx !== -1 && Array.isArray(list[mIdx].rows)) {
+              let cacheChanged = false;
+              const updatedListRows = list[mIdx].rows.map((r: any) => {
+                const rCid = String(r.clientId || r.client_id || r.id || '').trim();
+                const rUname = r.username ? String(r.username).trim().toLowerCase() : '';
+                let targetVal: boolean | undefined = undefined;
+                if (rCid && switchMapByCid.has(rCid)) {
+                  targetVal = switchMapByCid.get(rCid);
+                } else if (rUname && switchMapByUsername.has(rUname)) {
+                  targetVal = switchMapByUsername.get(rUname);
+                }
+                if (targetVal !== undefined && (r.switchOn !== targetVal || r.switch_on !== targetVal)) {
+                  cacheChanged = true;
+                  return { ...r, switchOn: targetVal, switch_on: targetVal };
+                }
+                return r;
+              });
+              if (cacheChanged) {
+                const nextList = [...list];
+                nextList[mIdx] = { ...nextList[mIdx], rows: updatedListRows };
+                globalTableCaches[ck] = nextList;
+                try {
+                  localStorage.setItem(`gts_cache_v3_${ck}`, JSON.stringify(nextList));
+                  localStorage.setItem(`gts_cache_meta_${ck}`, String(Date.now()));
+                } catch (e) {}
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 4. Sync billing_months.rows_data blob asynchronously (non-blocking so UI completes right after billing_rows commit;
+      // billing_rows is always overlaid on load via overlayBillingRows)
+      void (async () => {
+        try {
+          let bmQuery = supabase
+            .from('billing_months')
+            .select('id, rows_data')
+            .eq('month_id', monthId)
+            .eq('dealer_id', resolvedDealer);
+          if (cleanActiveLc) {
+            bmQuery = bmQuery.eq('line_code', cleanActiveLc);
+          } else {
+            bmQuery = bmQuery.or('line_code.is.null,line_code.eq.');
+          }
+
+          const { data: monthRec } = await bmQuery.limit(1).maybeSingle();
+          if (monthRec && monthRec.id) {
+            let rows = parseRowsData(monthRec.rows_data);
+            let changed = false;
+
+            rows = rows.map((r: any) => {
+              const rCid = String(r.clientId || r.client_id || r.id || '').trim();
+              const rUname = r.username ? String(r.username).trim().toLowerCase() : '';
+              let val: boolean | undefined = undefined;
+              if (rCid && switchMapByCid.has(rCid)) {
+                val = switchMapByCid.get(rCid);
+              } else if (rUname && switchMapByUsername.has(rUname)) {
+                val = switchMapByUsername.get(rUname);
+              }
+              if (val !== undefined && (r.switchOn !== val || r.switch_on !== val)) {
+                changed = true;
+                return { ...r, switchOn: val, switch_on: val };
+              }
+              return r;
+            });
+
+            if (changed) {
+              const updatedRowsData = {
+                ...(typeof monthRec.rows_data === 'object' && monthRec.rows_data !== null && !Array.isArray(monthRec.rows_data) ? monthRec.rows_data : {}),
+                rows
+              };
+              const { error: blobUpdateErr } = await supabase
+                .from('billing_months')
+                .update({ rows_data: updatedRowsData, updated: nowIso })
+                .eq('id', monthRec.id);
+              if (blobUpdateErr) {
+                console.warn('[setBillingRowSwitches] Failed updating billing_months blob:', blobUpdateErr.message);
+              }
+            }
+          }
+        } catch (blobErr) {
+          console.warn('[setBillingRowSwitches] Failed updating billing_months blob:', blobErr);
+        }
+      })();
     } catch (err: any) {
       console.error('[Billing Switches Error]:', err);
       throw err;
     }
+  },
+
+  flushBillingRowSwitchesKeepalive(
+    monthId: string,
+    dealerId: string = 'main',
+    updates: { clientId: string; on: boolean }[]
+  ) {
+    if (typeof fetch === 'undefined' || !monthId || !Array.isArray(updates) || updates.length === 0) return;
+    try {
+      const nowIso = new Date().toISOString();
+      const baseUrl = String(supabaseUrl || '').replace(/\/+$/, '');
+      if (!baseUrl) return;
+
+      const deduped = new Map<string, boolean>();
+      for (const u of updates) {
+        const cid = String(u.clientId || '').trim();
+        if (cid) deduped.set(cid, Boolean(u.on));
+      }
+
+      const sendBatch = (cids: string[], switchVal: boolean) => {
+        if (cids.length === 0) return;
+        for (let i = 0; i < cids.length; i += 80) {
+          const chunk = cids.slice(i, i + 80);
+          const inList = chunk.map(id => `"${id.replace(/"/g, '\\"')}"`).join(',');
+          const url = `${baseUrl}/rest/v1/billing_rows?month_id=eq.${encodeURIComponent(monthId)}&client_id=in.(${encodeURIComponent(inList)})`;
+          void fetch(url, {
+            method: 'PATCH',
+            keepalive: true,
+            headers: {
+              'apikey': supabaseAnonKey,
+              'Authorization': `Bearer ${supabaseAnonKey}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({ switch_on: switchVal, updated: nowIso })
+          }).catch(() => {});
+        }
+      };
+
+      const onIds: string[] = [];
+      const offIds: string[] = [];
+      deduped.forEach((on, cid) => {
+        if (on) onIds.push(cid);
+        else offIds.push(cid);
+      });
+
+      sendBatch(onIds, true);
+      sendBatch(offIds, false);
+    } catch (e) {}
   },
 
   async syncBillingRows(monthId: string, dealerId: string, rows: any[], changedIndices?: number[] | Set<number>) {
@@ -3688,8 +3957,11 @@ export const supabaseService = {
         line_code: String(r.lineCode || r.line_code || activeLineCode || ''),
         line_id: r.lineId || r.line_id || activeLineId || null
       };
-      if (typeof r.switchOn === 'boolean') {
-        mapped.switch_on = r.switchOn;
+      const switchVal = typeof r.switchOn === 'boolean'
+        ? r.switchOn
+        : (typeof r.switch_on === 'boolean' ? r.switch_on : undefined);
+      if (typeof switchVal === 'boolean') {
+        mapped.switch_on = switchVal;
       }
       const rCount = r.reminderSentCount ?? r.reminder_sent_count;
       if (typeof rCount === 'number' && !isNaN(rCount)) {
@@ -3742,23 +4014,34 @@ export const supabaseService = {
 
     let dbRowsToUpsert = itemsToSync.map(({ r }) => mapRowToDb(r)).filter(Boolean);
 
-    // If full sync (!hasChangedIndices), fetch existing billing_rows from Supabase to protect paid / higher payment rows
+    // If full sync (!hasChangedIndices), fetch existing billing_rows from Supabase to protect paid / higher payment rows & switch_on state
     if (!hasChangedIndices && supabase) {
       try {
-        const { data: existingDbRows } = await supabase.from('billing_rows').select('*').eq('month_id', monthId);
+        const { data: existingDbRows } = await fetchAllPages(
+          () => supabase.from('billing_rows').select('*').eq('month_id', monthId),
+          true
+        );
         if (existingDbRows && existingDbRows.length > 0) {
           const existingMap = new Map(existingDbRows.map(row => [row.id, row]));
           dbRowsToUpsert = dbRowsToUpsert.map(candidate => {
             const existing = existingMap.get(candidate.id);
             if (existing) {
+              const preservedSwitch =
+                typeof candidate.switch_on === 'boolean'
+                  ? candidate.switch_on
+                  : (typeof existing.switch_on === 'boolean' ? existing.switch_on : undefined);
               if (isBetterScore(existing, candidate)) {
                 return {
                   ...candidate,
                   payment_status: existing.payment_status,
                   payment_received: Math.max(existing.payment_received || 0, candidate.payment_received || 0),
                   cr: Math.max(existing.cr || 0, candidate.cr || 0),
-                  comments: existing.comments || candidate.comments
+                  comments: existing.comments || candidate.comments,
+                  ...(typeof preservedSwitch === 'boolean' ? { switch_on: preservedSwitch } : {})
                 };
+              }
+              if (typeof preservedSwitch === 'boolean' && candidate.switch_on === undefined) {
+                return { ...candidate, switch_on: preservedSwitch };
               }
             }
             return candidate;
@@ -5481,6 +5764,50 @@ export const supabaseService = {
       updatedAt: row.updated ? new Date(row.updated).getTime() : Date.now(),
       createdAt: row.created ? new Date(row.created).getTime() : Date.now()
     }), dealerId);
+  },
+
+  subscribeBillingRowUpdates: (
+    callback: (update: { monthId: string; dealerId: string; clientId: string; username?: string; switchOn?: boolean; updatedAt: number; raw: any }) => void,
+    dealerId?: string
+  ) => {
+    if (!supabase) return () => {};
+    const channelName = `billing_rows_rt_${dealerId || 'all'}_${Math.random().toString(36).substring(2, 7)}`;
+    const filterConfig: any = { event: '*', schema: 'public', table: 'billing_rows' };
+    if (activeLineCode) {
+      filterConfig.filter = `line_code=eq.${activeLineCode}`;
+    } else if (dealerId && dealerId !== 'all' && dealerId !== 'main') {
+      filterConfig.filter = `dealer_id=eq.${dealerId}`;
+    }
+
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', filterConfig, (payload: any) => {
+        const rec = payload?.new;
+        if (!rec || !rec.month_id || !rec.client_id) return;
+        const rowLc = rec.line_code ? String(rec.line_code).trim() : '';
+        const cleanActive = String(activeLineCode || '').trim();
+        if (cleanActive && rowLc !== cleanActive) return;
+        if (!cleanActive && rowLc) return;
+
+        callback({
+          monthId: String(rec.month_id),
+          dealerId: String(rec.dealer_id || 'main'),
+          clientId: String(rec.client_id),
+          username: rec.username || '',
+          switchOn: typeof rec.switch_on === 'boolean' ? rec.switch_on : undefined,
+          updatedAt: rec.updated ? new Date(rec.updated).getTime() : Date.now(),
+          raw: rec
+        });
+      })
+      .subscribe();
+
+    return () => {
+      try {
+        (channel as any)._closingByUs = true;
+        channel.unsubscribe();
+        supabase.removeChannel(channel);
+      } catch (e) {}
+    };
   },
 
   subscribeTranslations: (callback: (translations: any) => void) => {

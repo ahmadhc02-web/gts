@@ -18,6 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { overlayMotion, dialogMotion } from '../lib/motionPresets';
 import { usePopupTiming } from '../lib/usePopupTiming';
+import { DeferredBody } from './ui/DeferredBody';
 
 const Chat = lazyWithRetry(() => import('./Chat'));
 const AIHelpPanel = lazyWithRetry(() => import('./AIHelpPanel'));
@@ -180,6 +181,7 @@ export default function Layout({
   const [showSyncStatus, setShowSyncStatus] = useState(false);
   const [isInlineEditingActive, setIsInlineEditingActive] = useState(false);
   const [isComplaintSwipeDownOpen, setIsComplaintSwipeDownOpen] = useState(false);
+  usePopupTiming('ComplaintSwipeDown', isComplaintSwipeDownOpen);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const isUserSuspended = useMemo(() => {
@@ -559,87 +561,56 @@ export default function Layout({
     return (notifications || []).filter(n => !n.isRead).length;
   }, [notifications]);
 
-  const [expandedCats, setExpandedCats] = useState<string[]>(['ops', 'analytics', 'system']);
-
   const isSubDealerUser = user ? ((user.role === 'dealer' || Boolean(user.dealerId && user.dealerId !== 'main') || Boolean(user.lineCode)) && user.role !== 'admin') : false;
   const isSubAccount = user && user.role !== 'dealer' && user.dealerId && user.dealerId !== 'main';
-  const canAccessLoginProfiles = user?.role === 'super_admin' || user?.role === 'admin' || isSubDealerUser || Boolean(user);
 
-  const categories = [
-    {
-      id: 'ops',
-      label: 'Main Operations',
-      items: [
-        { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList },
-        { id: 'greenradius', label: 'Green Radius OS', icon: Cpu },
-        { id: 'nodes', label: 'Active Complainers', icon: Flame },
-        { id: 'dealers_data', label: 'Dealers Data', icon: BarChart3, roles: ['super_admin'] },
-        { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare },
-        { id: 'map', label: 'Network Map', icon: MapIcon },
-      ]
-    },
-    {
-      id: 'analytics',
-      label: 'Analytics & Users',
-      items: [
-        { id: 'clients', label: branding?.tabNames?.clients || 'USER DETAILS', icon: Contact },
-        { id: 'top10', label: 'TOP 10 COMPLAINER', icon: TrendingUp },
-        { id: 'users', label: isSubDealerUser ? 'SUBACCOUNTS' : 'LOGIN PROFILES', icon: Users },
-      ]
-    },
-    {
-      id: 'admin',
-      label: 'Configurations',
-      items: [
-        { id: 'dealers', label: 'Dealer Section', icon: ShieldAlert, roles: ['super_admin'] },
-        { id: 'config', label: branding?.tabNames?.config || 'WP Campaigns', icon: Workflow },
-      ]
-    },
-    {
-      id: 'system',
-      label: 'System Settings',
-      items: [
-        { id: 'settings', label: 'Security', icon: Shield },
-        { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
-        { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
-        { id: 'chat', label: 'AI Help', icon: Sparkles },
-        { id: 'branding', label: 'CUSTOMIZATION', icon: Palette, roles: ['super_admin'] },
-      ]
+  const visibleNavItems = useMemo(() => {
+    if (!user) return [];
+    const items = [
+      { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList, group: 'MAIN' },
+      { id: 'greenradius', label: 'Green Radius OS', icon: Cpu, group: 'MAIN' },
+      { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare, group: 'MAIN' },
+      { id: 'nodes', label: 'Active Complainers', icon: Flame, group: 'MAIN' },
+      { id: 'clients', label: branding?.tabNames?.clients || 'Users Management', icon: Contact, group: 'OPERATIONS' },
+      { id: 'billing', label: 'Billing Mod', icon: CreditCard, group: 'OPERATIONS' },
+      { id: 'config', label: 'WP Campaigns', icon: Workflow, group: 'OPERATIONS' },
+      { id: 'map', label: 'Network Map', icon: MapIcon, group: 'OPERATIONS' },
+      { id: 'monitor', label: 'Service Monitor', icon: Activity, group: 'OPERATIONS' },
+      { id: 'mypc', label: 'Settings', icon: Settings, group: 'WORKSPACE' },
+      { id: 'settings', label: 'Security', icon: Shield, group: 'WORKSPACE' },
+      { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'], group: 'WORKSPACE' },
+      { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'], group: 'WORKSPACE' },
+      { id: 'chat', label: 'AI Help', icon: Sparkles, group: 'WORKSPACE' }
+    ];
+
+    let permitted;
+    if (user.role === 'member' || user.role === 'field_agent') {
+      const order = ['complaints', 'submit', 'nodes', 'billing', 'mypc', 'map', 'settings'];
+      permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
+    } else if (user.role === 'liteadmin' || isSubAccount) {
+      const order = ['complaints', 'submit', 'nodes', 'clients', 'billing', 'mypc', 'map', 'settings'];
+      permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
+    } else {
+      permitted = items.filter(item => {
+        if (!user) return false;
+        if (item.roles && !item.roles.includes(user.role)) return false;
+        return true;
+      });
     }
-  ];
 
-  const filteredCategories = categories.map(cat => ({
-    ...cat,
-    items: cat.items.filter(item => {
-      // Role-based filtering
-      if (!user) return false;
+    return permitted.filter(item => !(branding?.hiddenTabs || []).includes(item.id));
+  }, [user, branding, isSubAccount]);
 
-      // Restrict Login Profiles to Super Admin and Sub-Dealer
-      if (item.id === 'users' && !canAccessLoginProfiles) {
-        return false;
-      }
-      
-      // If user is member, only show specific items requested: Operations, Active Complainers, WP Campaigns, Security
-      if (user.role === 'member' || user.role === 'field_agent') {
-        return ['complaints', 'nodes', 'config', 'settings'].includes(item.id);
-      }
-      if (user.role === 'liteadmin') {
-        return ['complaints', 'nodes', 'clients', 'config', 'settings'].includes(item.id);
-      }
-      
-      // For other roles, check item.roles if defined
-      if (item.roles && !item.roles.includes(user.role)) {
-        return false;
-      }
-      
-      return true;
-    })
-  })).filter(cat => cat.items.length > 0);
-
-  const toggleCat = (id: string) => {
-    setExpandedCats(prev => 
-      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
-    );
+  const checkIsItemActive = (id: string) => {
+    if (id === 'config' || id === 'campaigns') return location.pathname.startsWith('/billingmod/conversation') || location.pathname.startsWith('/conversation');
+    if (id === 'submit' || id === 'registry') return activeTab === 'submit' || location.pathname === '/registry' || location.pathname === '/submit';
+    if (id === 'chat') return isChatOpen;
+    if (id === 'monitor') return activeTab === 'latency' || activeTab === 'monitor' || isMonitorOpen;
+    if (id === 'map') return isMapOpen && !isSidebarOpen;
+    if (id === 'greenradius') return location.pathname === '/greenradius' || location.pathname.startsWith('/greenradius');
+    return activeTab === id ||
+           (id === 'complaints' && activeTab === 'ops') ||
+           (id === 'settings' && activeTab === 'profile');
   };
 
   const handleSidebarNav = (id: string) => {
@@ -649,6 +620,8 @@ export default function Layout({
       navigate('/conversation');
     } else if (id === 'monitor' || id === 'latency') {
       navigate('/latency');
+    } else if (id === 'greenradius' || id === 'radius' || id === 'vertix') {
+      navigate('/greenradius');
     } else if (id === 'submit' || id === 'registry') {
       navigate('/registry');
       setActiveTab('submit');
@@ -663,17 +636,38 @@ export default function Layout({
     setIsSidebarOpen(false);
   };
 
+  const handleNavClick = (id: string) => {
+    if (id === 'chat') {
+      setIsChatOpen(true);
+      setIsSidebarOpen(false);
+    } else if (id === 'monitor') {
+      handleSidebarNav('latency');
+    } else if (id === 'map') {
+      setIsMapOpen(true);
+      setIsSidebarOpen(false);
+    } else if (id === 'billing') {
+      handleSidebarNav('billing');
+    } else if (id === 'greenradius' || id === 'radius' || id === 'vertix') {
+      navigate('/greenradius');
+      setIsSidebarOpen(false);
+    } else {
+      handleSidebarNav(id);
+    }
+  };
+
   const showShellSidebar = Boolean(user && activeTab !== 'mypc' && activeTab !== 'config' && activeTab !== 'latency');
 
   return (
     <PakistaniFlagBackground className={cn(
       "transition-colors duration-300",
-      showShellSidebar && "bg-[#126f51] dark:bg-[#0c4b37] lg:min-h-0 lg:h-[100dvh] lg:max-h-[100dvh] lg:overflow-hidden"
+      showShellSidebar && "bg-[#126f51] dark:bg-[#0c4b37] min-h-0 h-[100dvh] max-h-[100dvh] h-dvh-fallback overflow-hidden"
     )}>
       <div className={cn(
         "flex-1 flex w-full",
         showShellSidebar
-          ? "min-h-screen lg:fixed lg:inset-0 lg:z-20 lg:w-screen lg:min-h-0 lg:h-[100dvh] lg:max-h-[100dvh] lg:overflow-hidden bg-[#126f51] dark:bg-[#0c4b37]"
+          ? (isPreview
+              ? "relative w-full h-full min-h-0 overflow-hidden bg-[#126f51] dark:bg-[#0c4b37]"
+              : "fixed inset-0 z-20 w-screen min-h-0 h-[100dvh] max-h-[100dvh] h-dvh-fallback overflow-hidden bg-[#126f51] dark:bg-[#0c4b37]")
           : "min-h-screen flex-col"
       )}>
       {/* Persistent Forest-Green Left Sidebar (Desktop - Matching Reference Image) */}
@@ -720,69 +714,12 @@ export default function Layout({
           {/* Navigation Options (Exact Website Options Preserved & Styled per Reference) */}
           <nav className="flex-1 px-3 py-2 flex flex-col gap-1 overflow-y-auto overflow-x-hidden no-scrollbar bg-[#126f51] dark:bg-[#0c4b37]">
             {(() => {
-              const items = [
-                { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList, group: 'MAIN' },
-                { id: 'greenradius', label: 'Green Radius OS', icon: Cpu, group: 'MAIN' },
-                { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare, group: 'MAIN' },
-                { id: 'nodes', label: 'Active Complainers', icon: Flame, group: 'MAIN' },
-                { id: 'clients', label: branding?.tabNames?.clients || 'Users Management', icon: Contact, group: 'OPERATIONS' },
-                { id: 'billing', label: 'Billing Mod', icon: CreditCard, group: 'OPERATIONS' },
-                { id: 'config', label: 'WP Campaigns', icon: Workflow, group: 'OPERATIONS' },
-                { id: 'map', label: 'Network Map', icon: MapIcon, group: 'OPERATIONS' },
-                { id: 'monitor', label: 'Service Monitor', icon: Activity, group: 'OPERATIONS' },
-                { id: 'mypc', label: 'Settings', icon: Settings, group: 'WORKSPACE' },
-                { id: 'settings', label: 'Security', icon: Shield, group: 'WORKSPACE' },
-                { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'], group: 'WORKSPACE' },
-                { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'], group: 'WORKSPACE' },
-                { id: 'chat', label: 'AI Help', icon: Sparkles, group: 'WORKSPACE' }
-              ];
-
-              let permitted;
-              if (user.role === 'member' || user.role === 'field_agent') {
-                const order = ['complaints', 'submit', 'nodes', 'billing', 'mypc', 'map', 'settings'];
-                permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
-              } else if (user.role === 'liteadmin' || isSubAccount) {
-                const order = ['complaints', 'submit', 'nodes', 'clients', 'billing', 'mypc', 'map', 'settings'];
-                permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
-              } else {
-                permitted = items.filter(item => {
-                  if (!user) return false;
-                  if (item.roles && !item.roles.includes(user.role)) return false;
-                  return true;
-                });
-              }
-
-              const visible = permitted.filter(item => !(branding?.hiddenTabs || []).includes(item.id));
               let lastGroup = '';
 
-              return visible.map((item, idx) => {
+              return visibleNavItems.map((item, idx) => {
                 const showGroupHeader = !isSidebarCollapsed && item.group !== lastGroup;
                 lastGroup = item.group;
-
-                const isItemActive = (() => {
-                  if (item.id === 'config' || item.id === 'campaigns') return location.pathname.startsWith('/billingmod/conversation') || location.pathname.startsWith('/conversation');
-                  if (item.id === 'submit' || item.id === 'registry') return activeTab === 'submit' || location.pathname === '/registry' || location.pathname === '/submit';
-                  if (item.id === 'chat') return isChatOpen;
-                  if (item.id === 'monitor') return activeTab === 'latency' || activeTab === 'monitor' || isMonitorOpen;
-                  if (item.id === 'map') return isMapOpen && !isSidebarOpen;
-                  return activeTab === item.id ||
-                         (item.id === 'complaints' && activeTab === 'ops') ||
-                         (item.id === 'settings' && activeTab === 'profile');
-                })();
-
-                const handleItemClick = () => {
-                  if (item.id === 'chat') {
-                    setIsChatOpen(true);
-                  } else if (item.id === 'monitor') {
-                    handleSidebarNav('latency');
-                  } else if (item.id === 'map') {
-                    setIsMapOpen(true);
-                  } else if (item.id === 'billing') {
-                    handleSidebarNav('billing');
-                  } else {
-                    handleSidebarNav(item.id);
-                  }
-                };
+                const isItemActive = checkIsItemActive(item.id);
 
                 return (
                   <React.Fragment key={`nav-${item.id}-${idx}`}>
@@ -796,7 +733,7 @@ export default function Layout({
                     )}
                     <button
                       type="button"
-                      onClick={handleItemClick}
+                      onClick={() => handleNavClick(item.id)}
                       onPointerEnter={() => handlePrefetchTab(item.id)}
                       onFocus={() => handlePrefetchTab(item.id)}
                       title={isSidebarCollapsed ? item.label : undefined}
@@ -919,97 +856,86 @@ export default function Layout({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-3 custom-scrollbar no-scrollbar">
-          {filteredCategories.map((cat, catIdx) => (
-            <div key={`cat-${cat.id}-${catIdx}`} className="space-y-1">
-              <button
-                type="button"
-                onClick={() => toggleCat(cat.id)}
-                className="w-full flex items-center justify-between px-3 py-1.5 text-emerald-100/60 hover:text-white transition-colors group cursor-pointer"
-              >
-                <span className="text-[10px] font-semibold uppercase tracking-[0.14em]">{cat.label}</span>
-                <ChevronDown
-                  size={13}
-                  className={cn(
-                    "transition-transform duration-300 ease-out",
-                    expandedCats.includes(cat.id) ? "rotate-180" : ""
+        {/* Navigation Options in Mobile Drawer - Identical to Desktop Sidebar */}
+        <nav className="flex-1 px-3 py-2 flex flex-col gap-1 overflow-y-auto overflow-x-hidden gts-dashboard-scroll custom-scrollbar no-scrollbar bg-[#126f51] dark:bg-[#0c4b37]">
+          {(() => {
+            let lastGroup = '';
+
+            return visibleNavItems.map((item, idx) => {
+              const showGroupHeader = item.group !== lastGroup;
+              lastGroup = item.group;
+              const isItemActive = checkIsItemActive(item.id);
+
+              return (
+                <React.Fragment key={`mobile-nav-${item.id}-${idx}`}>
+                  {showGroupHeader && (
+                    <div className={cn(
+                      "px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-100/55 select-none",
+                      idx === 0 ? "pt-1 pb-1" : "pt-3.5 pb-1"
+                    )}>
+                      {item.group}
+                    </div>
                   )}
-                />
-              </button>
-
-              <AnimatePresence initial={false}>
-                {expandedCats.includes(cat.id) && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2, ease: "easeInOut" }}
-                    className="overflow-hidden space-y-1"
+                  <button
+                    type="button"
+                    onClick={() => handleNavClick(item.id)}
+                    onPointerEnter={() => handlePrefetchTab(item.id)}
+                    onFocus={() => handlePrefetchTab(item.id)}
+                    className={cn(
+                      "w-full rounded-xl flex items-center gap-3 px-3 py-2 transition-all duration-150 cursor-pointer relative group",
+                      isItemActive
+                        ? "bg-white text-[#126f51] shadow-sm font-semibold"
+                        : "text-white hover:bg-white/10 hover:text-white font-medium"
+                    )}
                   >
-                    {cat.items.map((item, itemIdx) => {
-                      const isItemActive = (item.id === 'config' || item.id === 'campaigns')
-                        ? (location.pathname.startsWith('/billingmod/conversation') || location.pathname.startsWith('/conversation'))
-                        : (item.id === 'submit' || item.id === 'registry')
-                        ? (activeTab === 'submit' || location.pathname === '/registry' || location.pathname === '/submit')
-                        : (activeTab === item.id ||
-                           (item.id === 'complaints' && activeTab === 'ops') ||
-                           (item.id === 'settings' && activeTab === 'profile'));
+                    <item.icon
+                      size={17}
+                      className={cn(
+                        "shrink-0 transition-transform duration-150 group-hover:scale-105",
+                        isItemActive ? "text-[#126f51]" : "text-white"
+                      )}
+                    />
+                    <span className={cn(
+                      "text-[13px] leading-tight truncate whitespace-nowrap",
+                      isItemActive ? "text-[#126f51]" : "text-white"
+                    )}>
+                      {item.label}
+                    </span>
+                  </button>
+                </React.Fragment>
+              );
+            });
+          })()}
+        </nav>
 
-                      return (
-                        <button
-                          type="button"
-                          key={`sub-${item.id}-${itemIdx}`}
-                          onClick={() => handleSidebarNav(item.id)}
-                          onPointerEnter={() => handlePrefetchTab(item.id)}
-                          onFocus={() => handlePrefetchTab(item.id)}
-                          className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all group relative cursor-pointer",
-                            isItemActive
-                              ? "bg-white text-[#155d27] font-semibold shadow-sm"
-                              : "text-white/85 hover:bg-white/10 hover:text-white font-medium"
-                          )}
-                        >
-                          <item.icon size={16} className={cn(isItemActive ? "text-[#155d27]" : "text-emerald-100/80 group-hover:text-white")} />
-                          <span className="text-[13px] truncate whitespace-nowrap">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          ))}
-        </div>
-
-        <div className="p-3.5 mt-auto space-y-2 shrink-0 border-t border-white/12 bg-black/10 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
-          <button
-            type="button"
-            onClick={() => handleSidebarNav('mypc')}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-          >
-            <Settings size={14} />
-            <span>Settings</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleSidebarNav('billing')}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-white text-[#155d27] hover:bg-emerald-50 rounded-xl text-xs font-semibold shadow-sm cursor-pointer transition-colors"
-          >
-            <CreditCard size={14} />
-            <span>Billing Mod</span>
-          </button>
+        {/* Bottom Utility & Logout Section inside Mobile Drawer */}
+        <div className="px-3 py-3 border-t border-white/12 flex flex-col gap-1 shrink-0 bg-[#126f51] dark:bg-[#0c4b37] pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+          {(branding?.hiddenTabs || []).includes('chat') && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsChatOpen(true);
+                setIsSidebarOpen(false);
+              }}
+              className="w-full rounded-xl flex items-center gap-3 px-3 py-2 text-white/85 hover:bg-white/10 hover:text-white transition-all cursor-pointer"
+              title="AI Help"
+            >
+              <Sparkles size={17} className="shrink-0 text-emerald-200" />
+              <span className="text-[13px] font-medium whitespace-nowrap">AI Help</span>
+            </button>
+          )}
 
           <button
             type="button"
             onClick={() => {
-              if (onLogout) onLogout();
+              setShowLogoutModal(true);
               setIsSidebarOpen(false);
             }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/90 text-xs font-semibold transition-colors cursor-pointer"
+            className="w-full rounded-xl flex items-center gap-3 px-3 py-2 text-[#ffffff] hover:bg-white/12 hover:text-[#ffffff] transition-all cursor-pointer"
+            title="Sign Out"
           >
-            <LogOut size={14} />
-            <span>Sign Out</span>
+            <LogOut size={17} className="shrink-0 text-[#ffffff]" />
+            <span className="text-[13px] font-medium whitespace-nowrap text-[#ffffff]">Logout</span>
           </button>
         </div>
       </motion.aside>
@@ -1017,11 +943,13 @@ export default function Layout({
       {/* Main Content Shell (Inset Rounded Workspace Sheet on Green Backdrop) */}
       <div className={cn(
         "flex-1 min-w-0 flex flex-col transition-all duration-300",
-        showShellSidebar && "lg:py-2.5 lg:pr-2.5 lg:min-h-0 lg:h-full lg:overflow-hidden bg-[#126f51] dark:bg-[#0c4b37]"
+        showShellSidebar && "lg:py-2.5 lg:pr-2.5 min-h-0 h-full overflow-hidden bg-[#126f51] dark:bg-[#0c4b37]"
       )}>
-      <div className={cn(
+      <div
+        id={showShellSidebar ? "gts-main-scroll" : undefined}
+        className={cn(
         "flex-1 min-w-0 flex flex-col transition-colors duration-300",
-        showShellSidebar && "bg-[#ffffff] dark:bg-[#24262b] lg:rounded-[24px] shadow-[0_12px_36px_rgba(0,0,0,0.16)] border border-white/50 dark:border-white/10 overflow-x-hidden lg:min-h-0 lg:h-full lg:overflow-y-auto overscroll-contain custom-scrollbar"
+        showShellSidebar && "bg-[#ffffff] dark:bg-[#24262b] lg:rounded-[24px] shadow-[0_12px_36px_rgba(0,0,0,0.16)] border border-white/50 dark:border-white/10 min-h-0 h-full overflow-y-auto overflow-x-hidden gts-dashboard-scroll custom-scrollbar"
       )}>
 
       {/* Network Status Banner */}
@@ -1297,7 +1225,7 @@ export default function Layout({
                 </div>
               )}
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 gts-dashboard-scroll custom-scrollbar">
                 {notifications.length === 0 ? (
                   <div className="py-20 text-center">
                     <Bell className="mx-auto text-slate-200 dark:text-slate-800 mb-4" size={48} />
@@ -1448,9 +1376,9 @@ export default function Layout({
         )
       )}>
         <div className={cn(
-          "max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-7 flex items-center justify-between transition-all duration-300",
+          "max-w-[1850px] w-full mx-auto px-2.5 sm:px-6 lg:px-7 flex items-center justify-between transition-all duration-300 min-w-0",
           showShellSidebar && "bg-[#ffffff] dark:bg-[#24262b]",
-          activeTab === 'billing' ? "h-auto min-h-14 py-3 md:py-0 md:h-16 flex-wrap md:flex-nowrap gap-3" : "h-14"
+          activeTab === 'billing' ? "h-auto min-h-14 py-3 md:py-0 md:h-16 flex-wrap md:flex-nowrap gap-3" : "h-14 gap-1.5"
         )}>
           {activeTab === 'billing' ? (
             <div className="flex flex-col md:flex-row md:items-center justify-between w-full gap-3 md:gap-4">
@@ -1708,14 +1636,14 @@ export default function Layout({
               <motion.div 
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="flex items-center gap-2 sm:gap-4 lg:gap-3 ml-0"
+                className="flex items-center gap-1.5 sm:gap-4 lg:gap-3 ml-0 min-w-0"
               >
             {user && (
               <button
                 id="sidebar-toggle-btn"
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className={cn(
-                  "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden -ml-1 sm:ml-0 w-9 h-9 bg-white dark:bg-[#31343c] border border-black/[0.08] dark:border-white/10 shadow-xs cursor-pointer",
+                  "rounded-xl transition-all mr-0.5 sm:mr-1 flex items-center justify-center overflow-hidden sm:ml-0 w-9 h-9 bg-white dark:bg-[#31343c] border border-black/[0.08] dark:border-white/10 shadow-xs cursor-pointer shrink-0",
                   menuUnlocked ? "flex" : "flex lg:hidden",
                   "text-slate-700 dark:text-slate-200"
                 )}
@@ -1732,12 +1660,18 @@ export default function Layout({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setIsComplaintSwipeDownOpen(!isComplaintSwipeDownOpen)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#f4f4f4] dark:bg-[#31343c] border border-black/[0.08] dark:border-white/10 shadow-xs hover:bg-[#ececec] dark:hover:bg-[#3a3e47] hover:shadow-sm transition-all cursor-pointer group"
+                onPointerEnter={() => {
+                  import('./ComplaintForm');
+                }}
+                onFocus={() => {
+                  import('./ComplaintForm');
+                }}
+                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-[#f4f4f4] dark:bg-[#31343c] border border-black/[0.08] dark:border-white/10 shadow-xs hover:bg-[#ececec] dark:hover:bg-[#3a3e47] hover:shadow-sm transition-all cursor-pointer group shrink-0"
               >
                 <span className="w-6 h-6 rounded-lg bg-[#187233] text-white flex items-center justify-center shrink-0">
                   <PlusSquare size={14} />
                 </span>
-                <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
+                <span className="text-[11px] sm:text-xs font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
                   {branding?.tabNames?.submit || 'Register Complaint'}
                 </span>
               </motion.button>
@@ -1749,7 +1683,7 @@ export default function Layout({
             <IndependenceBuntingHeader />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Segmented Control Utility Cluster matching Reference Top-Right Controls */}
             <div className="flex items-center gap-1 p-1 rounded-xl bg-[#f4f4f4] dark:bg-[#1c1e22] border border-black/[0.05] dark:border-white/10">
               {user && (
@@ -2118,10 +2052,10 @@ export default function Layout({
                 id="header-logout-btn"
                 onClick={() => setShowLogoutModal(true)}
                 title="Logout from system"
-                className="flex items-center gap-1.5 px-3 h-9 rounded-xl border border-black/[0.08] dark:border-white/10 bg-white dark:bg-[#31343c] hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 hover:text-rose-600 dark:text-slate-200 dark:hover:text-rose-400 transition-all select-none shadow-xs cursor-pointer active:scale-95 group font-sans whitespace-nowrap"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 h-9 rounded-xl border border-black/[0.08] dark:border-white/10 bg-white dark:bg-[#31343c] hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 hover:text-rose-600 dark:text-slate-200 dark:hover:text-rose-400 transition-all select-none shadow-xs cursor-pointer active:scale-95 group font-sans whitespace-nowrap shrink-0"
               >
                 <LogOut size={13} className="text-slate-500 group-hover:text-rose-600 dark:text-slate-400 dark:group-hover:text-rose-400 transition-colors shrink-0" />
-                <span className="text-[11px] font-semibold leading-none">
+                <span className="hidden min-[430px]:inline text-[11px] font-semibold leading-none">
                   Logout
                 </span>
               </button>
@@ -2187,27 +2121,29 @@ export default function Layout({
 
       <AnimatePresence>
         {isComplaintSwipeDownOpen && user && (
-          <div className="fixed inset-0 top-14 z-[100] flex justify-center items-start overflow-y-auto overflow-x-hidden bg-slate-950/50 dark:bg-slate-950/70 backdrop-blur-md px-3 sm:px-6 pb-8 pt-2 sm:pt-4">
+          <div className="fixed inset-0 top-14 z-[100] flex justify-center items-start overflow-y-auto overflow-x-hidden gts-dashboard-scroll px-3 sm:px-6 pb-8 pt-2 sm:pt-4">
+            {/* Smooth background overlay with lightweight blur */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
               onClick={() => setIsComplaintSwipeDownOpen(false)}
-              className="fixed inset-0 top-14 bg-transparent"
+              className="fixed inset-0 top-14 bg-slate-950/45 dark:bg-slate-950/65 backdrop-blur-xs z-10"
             />
 
+            {/* Fast, lightweight, hardware-accelerated top-to-bottom sliding frame */}
             <motion.div
               initial={{ y: '-100%', opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: '-100%', opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 28, mass: 0.85 }}
-              className="relative w-full max-w-4xl mx-auto bg-[#ffffff] dark:bg-[#24262b] rounded-b-3xl sm:rounded-3xl shadow-2xl border border-slate-200/80 dark:border-white/10 px-4 sm:px-8 pt-6 pb-8 overflow-visible transform-gpu will-change-transform"
+              transition={{ type: 'spring', stiffness: 360, damping: 32, mass: 0.65 }}
+              className="relative z-20 w-full max-w-4xl mx-auto bg-[#ffffff] dark:bg-[#24262b] rounded-b-3xl sm:rounded-3xl shadow-2xl border border-slate-200/80 dark:border-white/10 px-4 sm:px-8 pt-6 pb-8 overflow-visible transform-gpu will-change-transform"
             >
               <button
                 type="button"
                 onClick={() => setIsComplaintSwipeDownOpen(false)}
-                className="absolute top-4 right-4 p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer z-20"
+                className="absolute top-4 right-4 p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer z-30"
                 title="Close"
               >
                 <X size={18} />
@@ -2238,23 +2174,30 @@ export default function Layout({
                     </div>
                   )}
                   <div className={cn(isUserSuspended && "blur-[3px] pointer-events-none select-none opacity-30")}>
-                    <Suspense fallback={<SkForm fields={6} className="w-[896px] max-w-full" />}>
-                      <ComplaintForm
-                        onSubmit={async (data) => {
-                          if (onRegisterComplaint) {
-                            await onRegisterComplaint(data);
-                          } else {
-                            toast.error("Complaint registration service unavailable");
-                          }
-                          setIsComplaintSwipeDownOpen(false);
-                        }}
-                        isLoading={isLoading || false}
-                        appConfig={appConfig}
-                        currentUser={user}
-                        branding={branding as any}
-                        cardClassName="w-[896px] max-w-full !pt-[29px] mr-0 -mt-[31px]"
-                      />
-                    </Suspense>
+                    <DeferredBody
+                      frames={2}
+                      mode="frames"
+                      minHeight={420}
+                      fallback={<SkForm fields={6} className="w-[896px] max-w-full !pt-[29px] -mt-[31px]" />}
+                    >
+                      <Suspense fallback={<SkForm fields={6} className="w-[896px] max-w-full !pt-[29px] -mt-[31px]" />}>
+                        <ComplaintForm
+                          onSubmit={async (data) => {
+                            if (onRegisterComplaint) {
+                              await onRegisterComplaint(data);
+                            } else {
+                              toast.error("Complaint registration service unavailable");
+                            }
+                            setIsComplaintSwipeDownOpen(false);
+                          }}
+                          isLoading={isLoading || false}
+                          appConfig={appConfig}
+                          currentUser={user}
+                          branding={branding as any}
+                          cardClassName="w-[896px] max-w-full !pt-[29px] mr-0 -mt-[31px]"
+                        />
+                      </Suspense>
+                    </DeferredBody>
                   </div>
                 </div>
               </div>
@@ -2271,9 +2214,9 @@ export default function Layout({
       {/* Main Content */}
       <main
         className={cn(
-          "mx-auto transition-all duration-300 flex-1 flex flex-col",
+          "mx-auto transition-all duration-300 flex-1 flex flex-col min-w-0",
           user
-            ? "pt-2 pb-4 sm:pt-2.5 sm:pb-5 max-w-[1850px] w-full px-4 sm:px-6 lg:px-6 bg-[#ffffff] dark:bg-[#24262b]"
+            ? "pt-2 pb-4 sm:pt-2.5 sm:pb-5 max-w-[1850px] w-full px-3 sm:px-6 lg:px-6 bg-[#ffffff] dark:bg-[#24262b]"
             : "w-full max-w-none px-0 py-0 sm:px-0 sm:py-0"
         )}
         style={user ? { paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' } : undefined}
@@ -2282,6 +2225,7 @@ export default function Layout({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.12 }}
+          className="min-w-0 w-full"
         >
           {children}
         </motion.div>

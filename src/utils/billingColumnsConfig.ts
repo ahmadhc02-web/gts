@@ -1,4 +1,5 @@
 import { safeLocalStorage } from '../lib/safeLocalStorage';
+import { supabase } from '../lib/supabase';
 
 export interface BillingColumnDef {
   id: string;
@@ -59,18 +60,106 @@ export const DEFAULT_BILLING_COLUMN_VISIBILITY: BillingColumnVisibilityMap = {
 const STORAGE_KEY = 'billing_mod_columns_visibility_v1';
 const EVENT_NAME = 'billing_mod_columns_changed';
 
+const knownRecordIds: Record<string, string | number> = {};
+const activeSaveCounter: Record<string, number> = {};
+
+async function syncToSupabase(configType: string, data: any) {
+  if (!supabase) return;
+  activeSaveCounter[configType] = (activeSaveCounter[configType] || 0) + 1;
+  try {
+    const payload = {
+      config_type: configType,
+      dashboard_subtext: JSON.stringify(data),
+      updated: new Date().toISOString()
+    };
+
+    let targetId = knownRecordIds[configType];
+    if (!targetId) {
+      const { data: existingRec, error: findErr } = await supabase
+        .from('branding_config')
+        .select('id')
+        .eq('config_type', configType)
+        .limit(1)
+        .maybeSingle();
+      if (findErr) {
+        console.warn(`[BillingColumnsConfig] Error looking up ${configType}:`, findErr.message);
+      }
+      if (existingRec && existingRec.id) {
+        targetId = existingRec.id;
+        knownRecordIds[configType] = targetId;
+      }
+    }
+
+    if (targetId) {
+      const { error: updateErr } = await supabase
+        .from('branding_config')
+        .update(payload)
+        .eq('id', targetId);
+      if (updateErr) {
+        delete knownRecordIds[configType];
+        console.warn(`[BillingColumnsConfig] Error updating ${configType}:`, updateErr.message);
+      }
+    } else {
+      const { data: inserted, error: insertErr } = await supabase
+        .from('branding_config')
+        .insert([payload])
+        .select('id')
+        .maybeSingle();
+      if (insertErr) {
+        console.warn(`[BillingColumnsConfig] Error inserting ${configType}:`, insertErr.message);
+      } else if (inserted && inserted.id) {
+        knownRecordIds[configType] = inserted.id;
+      }
+    }
+  } catch (e) {
+    console.warn(`[BillingColumnsConfig] Failed syncing ${configType} to Supabase:`, e);
+  } finally {
+    activeSaveCounter[configType] = Math.max(0, (activeSaveCounter[configType] || 1) - 1);
+  }
+}
+
+async function loadFromSupabase(configType: string, storageKey: string, defaultMap: any, eventName: string) {
+  if (!supabase) return;
+  if ((activeSaveCounter[configType] || 0) > 0) return;
+  try {
+    const startCount = activeSaveCounter[configType] || 0;
+    const { data: record } = await supabase.from('branding_config').select('*').eq('config_type', configType).limit(1).maybeSingle();
+    if ((activeSaveCounter[configType] || 0) > 0 || startCount !== (activeSaveCounter[configType] || 0)) {
+      return;
+    }
+    if (record) {
+      if (record.id) knownRecordIds[configType] = record.id;
+      if (record.dashboard_subtext) {
+        const parsed = JSON.parse(record.dashboard_subtext);
+        if (typeof parsed === 'object' && parsed !== null) {
+          const merged = { ...defaultMap, ...parsed };
+          safeLocalStorage.setItem(storageKey, JSON.stringify(merged));
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(eventName, { detail: merged }));
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`[BillingColumnsConfig] Failed loading ${configType} from Supabase:`, e);
+  }
+}
+
 export function getBillingColumnVisibility(): BillingColumnVisibilityMap {
   try {
     const raw = safeLocalStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (typeof parsed === 'object' && parsed !== null) {
+        // Trigger background load from Supabase to sync latest
+        loadFromSupabase('billing_columns_visibility', STORAGE_KEY, DEFAULT_BILLING_COLUMN_VISIBILITY, EVENT_NAME);
         return { ...DEFAULT_BILLING_COLUMN_VISIBILITY, ...parsed };
       }
     }
   } catch (e) {
     console.warn('[BillingColumnsConfig] Error loading column visibility:', e);
   }
+  loadFromSupabase('billing_columns_visibility', STORAGE_KEY, DEFAULT_BILLING_COLUMN_VISIBILITY, EVENT_NAME);
   return { ...DEFAULT_BILLING_COLUMN_VISIBILITY };
 }
 
@@ -78,6 +167,7 @@ export function saveBillingColumnVisibility(vis: BillingColumnVisibilityMap): vo
   try {
     const updated = { ...DEFAULT_BILLING_COLUMN_VISIBILITY, ...vis };
     safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    syncToSupabase('billing_columns_visibility', updated);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: updated }));
     }
@@ -136,12 +226,14 @@ export function getBillingStatusVisibility(): BillingStatusVisibilityMap {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (typeof parsed === 'object' && parsed !== null) {
+        loadFromSupabase('billing_status_visibility', STATUS_STORAGE_KEY, DEFAULT_BILLING_STATUS_VISIBILITY, STATUS_EVENT_NAME);
         return { ...DEFAULT_BILLING_STATUS_VISIBILITY, ...parsed };
       }
     }
   } catch (e) {
     console.warn('[BillingColumnsConfig] Error loading status visibility:', e);
   }
+  loadFromSupabase('billing_status_visibility', STATUS_STORAGE_KEY, DEFAULT_BILLING_STATUS_VISIBILITY, STATUS_EVENT_NAME);
   return { ...DEFAULT_BILLING_STATUS_VISIBILITY };
 }
 
@@ -149,6 +241,7 @@ export function saveBillingStatusVisibility(vis: BillingStatusVisibilityMap): vo
   try {
     const updated = { ...DEFAULT_BILLING_STATUS_VISIBILITY, ...vis };
     safeLocalStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(updated));
+    syncToSupabase('billing_status_visibility', updated);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(STATUS_EVENT_NAME, { detail: updated }));
     }

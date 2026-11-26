@@ -933,17 +933,60 @@ export default function AdminPanel({
     });
   };
 
-  type PendingSwitchItem = { monthId: string; dealerId: string; clientId: string; username?: string; on: boolean; prevOn: boolean; rowIndex: number };
+  type PendingSwitchItem = { monthId: string; dealerId: string; clientId: string; username?: string; on: boolean; prevOn: boolean; rowIndex: number; rowData?: any };
   const pendingSwitchUpdatesByMonthRef = React.useRef<Map<string, Map<string, PendingSwitchItem>>>(new Map());
   const inFlightSwitchValuesRef = React.useRef<Map<string, Map<string, PendingSwitchItem>>>(new Map());
   const inFlightSwitchClientIdsRef = React.useRef<Set<string>>(new Set());
   const switchFlushTimerRef = React.useRef<any>(null);
   const switchFlushMaxTimerRef = React.useRef<any>(null);
   const isSwitchFlushingRef = React.useRef<boolean>(false);
+  const revalidatedMonthsOnSessionRef = React.useRef<Set<string>>(new Set());
+  const revalidatedMonthsCompleteRef = React.useRef<Set<string>>(new Set());
+  const [revalidatedVersion, setRevalidatedVersion] = useState<number>(0);
   const [switchSavingCount, setSwitchSavingCount] = useState<number>(0);
   const [savingSwitchClientIds, setSavingSwitchClientIds] = useState<Set<string>>(() => new Set());
   const [showAllSavedChip, setShowAllSavedChip] = useState<boolean>(false);
   const switchAllSavedTimerRef = React.useRef<any>(null);
+
+  const syncBillingMonthCache = useCallback((monthId: string, updatedRows: any[]) => {
+    if (!monthId || !Array.isArray(updatedRows)) return;
+    try {
+      const lc = currentUser?.lineCode || 'nolc';
+      const dealer = activeDealerId || 'all';
+      const candidateKeys = Array.from(new Set([
+        `billing_months_${dealer}_${lc}`,
+        `billing_months_${activeDealerId || 'main'}_${lc}`,
+        ...(!activeDealerId ? [`billing_months_all_${lc}`, `billing_months_main_${lc}`] : [])
+      ]));
+      const nowStr = String(Date.now());
+      for (const exactKey of candidateKeys) {
+        let list = globalTableCaches[exactKey];
+        if (!Array.isArray(list)) {
+          const raw = localStorage.getItem(`gts_cache_v3_${exactKey}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) list = parsed;
+          }
+        }
+        if (Array.isArray(list)) {
+          const mIdx = list.findIndex((m: any) => (m?.id || m?.month_id) === monthId);
+          if (mIdx !== -1) {
+            const nextList = [...list];
+            nextList[mIdx] = {
+              ...nextList[mIdx],
+              rows: updatedRows,
+              rowsLoaded: true
+            };
+            globalTableCaches[exactKey] = nextList;
+            try {
+              localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(nextList));
+              localStorage.setItem(`gts_cache_meta_${exactKey}`, nowStr);
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {}
+  }, [activeDealerId, currentUser?.lineCode]);
 
   const applyPendingSwitchesToMonth = useCallback((month: any, dealerId?: string) => {
     if (!month || !Array.isArray(month.rows) || month.rows.length === 0) return month;
@@ -1081,7 +1124,7 @@ export default function AdminPanel({
     recomputeSwitchSavingState();
 
     try {
-      const payload = updatesList.map(u => ({ clientId: u.clientId, username: u.username, on: u.on }));
+      const payload = updatesList.map(u => ({ clientId: u.clientId, username: u.username, on: u.on, rowData: u.rowData }));
       await pocketbaseService.setBillingRowSwitches(bucketMonthId, bucketDealerId, payload);
 
       const activeInFlight = inFlightSwitchValuesRef.current.get(bucketKey);
@@ -1153,6 +1196,7 @@ export default function AdminPanel({
           nextMonths[idx] = { ...doc, rows };
           billingMonthsRef.current = nextMonths;
           setBillingMonths(nextMonths);
+          syncBillingMonthCache(bucketMonthId, rows);
         }
 
         recomputeSwitchSavingState();
@@ -1191,7 +1235,9 @@ export default function AdminPanel({
     username: string | undefined,
     on: boolean,
     prevOn: boolean,
-    rowIndex: number
+    rowIndex: number,
+    rowData?: any,
+    immediate: boolean = false
   ) => {
     if (!monthId || !clientId) return;
     const resolvedDealer = dealerId || 'main';
@@ -1209,7 +1255,8 @@ export default function AdminPanel({
       username,
       on: Boolean(on),
       prevOn: existing ? existing.prevOn : prevOn,
-      rowIndex
+      rowIndex,
+      rowData: rowData || existing?.rowData
     });
 
     setShowAllSavedChip(false);
@@ -1219,7 +1266,20 @@ export default function AdminPanel({
     }
     recomputeSwitchSavingState();
 
-    if (switchFlushTimerRef.current) clearTimeout(switchFlushTimerRef.current);
+    if (switchFlushTimerRef.current) {
+      clearTimeout(switchFlushTimerRef.current);
+      switchFlushTimerRef.current = null;
+    }
+
+    if (immediate) {
+      if (switchFlushMaxTimerRef.current) {
+        clearTimeout(switchFlushMaxTimerRef.current);
+        switchFlushMaxTimerRef.current = null;
+      }
+      void flushSwitchQueue();
+      return;
+    }
+
     if (!switchFlushMaxTimerRef.current) {
       switchFlushMaxTimerRef.current = setTimeout(() => {
         if (switchFlushTimerRef.current) {
@@ -1228,7 +1288,7 @@ export default function AdminPanel({
         }
         switchFlushMaxTimerRef.current = null;
         flushSwitchQueue();
-      }, 1000);
+      }, 300);
     }
     switchFlushTimerRef.current = setTimeout(() => {
       if (switchFlushMaxTimerRef.current) {
@@ -1237,31 +1297,62 @@ export default function AdminPanel({
       }
       switchFlushTimerRef.current = null;
       flushSwitchQueue();
-    }, 250);
+    }, 60);
   }, [flushSwitchQueue, recomputeSwitchSavingState]);
+
+  const flushAllSwitchesKeepalive = useCallback(() => {
+    try {
+      const mergedByBucket = new Map<string, { monthId: string; dealerId: string; map: Map<string, boolean> }>();
+      const collect = (source: Map<string, Map<string, PendingSwitchItem>>) => {
+        source.forEach((bucket, key) => {
+          bucket.forEach((item) => {
+            if (!mergedByBucket.has(key)) {
+              mergedByBucket.set(key, { monthId: item.monthId, dealerId: item.dealerId, map: new Map() });
+            }
+            mergedByBucket.get(key)!.map.set(item.clientId, item.on);
+          });
+        });
+      };
+      // Collect in-flight first, then pending overrides in-flight
+      collect(inFlightSwitchValuesRef.current);
+      collect(pendingSwitchUpdatesByMonthRef.current);
+
+      mergedByBucket.forEach(({ monthId, dealerId, map }) => {
+        const list = Array.from(map.entries()).map(([clientId, on]) => ({ clientId, on }));
+        if (list.length > 0) {
+          pocketbaseService.flushBillingRowSwitchesKeepalive(monthId, dealerId, list);
+        }
+      });
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (getTotalPendingSwitchCount() > 0 || isSwitchFlushingRef.current) {
+      flushAllSwitchesKeepalive();
+      if (getTotalPendingSwitchCount() > 5) {
         e.preventDefault();
         e.returnValue = 'You have unsaved switch changes. Are you sure you want to leave?';
         return e.returnValue;
       }
     };
     const handleVisibility = () => {
-      if (document.visibilityState === 'hidden' && getTotalPendingSwitchCount() > 0) {
-        if (switchFlushTimerRef.current) {
-          clearTimeout(switchFlushTimerRef.current);
-          switchFlushTimerRef.current = null;
+      if (document.visibilityState === 'hidden') {
+        flushAllSwitchesKeepalive();
+        if (getTotalPendingSwitchCount() > 0) {
+          if (switchFlushTimerRef.current) {
+            clearTimeout(switchFlushTimerRef.current);
+            switchFlushTimerRef.current = null;
+          }
+          if (switchFlushMaxTimerRef.current) {
+            clearTimeout(switchFlushMaxTimerRef.current);
+            switchFlushMaxTimerRef.current = null;
+          }
+          flushSwitchQueue();
         }
-        if (switchFlushMaxTimerRef.current) {
-          clearTimeout(switchFlushMaxTimerRef.current);
-          switchFlushMaxTimerRef.current = null;
-        }
-        flushSwitchQueue();
       }
     };
     const handlePageHide = () => {
+      flushAllSwitchesKeepalive();
       if (getTotalPendingSwitchCount() > 0) {
         if (switchFlushTimerRef.current) {
           clearTimeout(switchFlushTimerRef.current);
@@ -1282,7 +1373,7 @@ export default function AdminPanel({
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [flushSwitchQueue, getTotalPendingSwitchCount]);
+  }, [flushSwitchQueue, flushAllSwitchesKeepalive, getTotalPendingSwitchCount]);
 
   const prevMonthDealerRef = React.useRef(`${currentMonthId}_${activeDealerId}`);
   useEffect(() => {
@@ -1316,7 +1407,7 @@ export default function AdminPanel({
     const currentDoc = currentMonths[idx];
     const rows = [...currentDoc.rows];
 
-    const updates: { clientId: string, username?: string, on: boolean }[] = [];
+    const updates: { clientId: string, username?: string, on: boolean, rowData?: any }[] = [];
     const prevValues = new Map<string, boolean>();
     const targetBucketKey = `${currentMonthId}::${activeDealerId || 'main'}`;
     const pendingBucket = pendingSwitchUpdatesByMonthRef.current.get(targetBucketKey);
@@ -1341,8 +1432,9 @@ export default function AdminPanel({
           newOn = !shouldSwitchBeOff(status);
         }
 
-        rows[rIdx] = { ...r, switchOn: newOn, switch_on: newOn };
-        updates.push({ clientId: cid, username: r.username, on: newOn });
+        const nextRow = { ...r, switchOn: newOn, switch_on: newOn };
+        rows[rIdx] = nextRow;
+        updates.push({ clientId: cid, username: r.username, on: newOn, rowData: nextRow });
       }
     });
 
@@ -1352,6 +1444,7 @@ export default function AdminPanel({
     nextMonths[idx] = { ...currentDoc, rows };
     billingMonthsRef.current = nextMonths;
     setBillingMonths(nextMonths);
+    syncBillingMonthCache(currentMonthId, rows);
 
     const batchIds = new Set(updates.map(u => u.clientId));
     setSavingSwitchClientIds(prev => {
@@ -1362,8 +1455,9 @@ export default function AdminPanel({
     setSwitchSavingCount(prev => prev + updates.length);
     setShowAllSavedChip(false);
 
+    const targetDealerId = currentDoc.dealerId || activeDealerId || 'main';
     try {
-      await pocketbaseService.setBillingRowSwitches(currentMonthId, activeDealerId, updates);
+      await pocketbaseService.setBillingRowSwitches(currentMonthId, targetDealerId, updates);
       setSavingSwitchClientIds(prev => {
         const next = new Set(prev);
         batchIds.forEach(id => next.delete(id));
@@ -1397,6 +1491,7 @@ export default function AdminPanel({
         nMonths[mIdx] = { ...docNow, rows: rList };
         billingMonthsRef.current = nMonths;
         setBillingMonths(nMonths);
+        syncBillingMonthCache(currentMonthId, rList);
       }
       toast.error(`Could not save ${updates.length} switches`, {
         action: {
@@ -1405,7 +1500,7 @@ export default function AdminPanel({
         }
       });
     }
-  }, [currentMonthId, activeDealerId, recomputeSwitchSavingState]);
+  }, [currentMonthId, activeDealerId, recomputeSwitchSavingState, syncBillingMonthCache]);
 
   const ensureMonthLoaded = useCallback(async (monthId: string, force = false) => {
     if (!monthId) return null;
@@ -1484,6 +1579,9 @@ export default function AdminPanel({
             }
           } catch (e) {}
 
+          revalidatedMonthsOnSessionRef.current.add(monthId);
+          revalidatedMonthsCompleteRef.current.add(monthId);
+          setRevalidatedVersion(v => v + 1);
           return freshMonth;
         }
         return null;
@@ -1739,9 +1837,13 @@ export default function AdminPanel({
     const activeDoc = currentMonths.find((m: any) => (m?.id || m?.month_id) === currentMonthId);
     if (!activeDoc || !activeDoc.rowsLoaded) {
       setIsSwitchingMonth(true);
+      revalidatedMonthsOnSessionRef.current.add(currentMonthId);
       ensureMonthLoaded(currentMonthId).finally(() => {
         setIsSwitchingMonth(false);
       });
+    } else if (!revalidatedMonthsOnSessionRef.current.has(currentMonthId)) {
+      revalidatedMonthsOnSessionRef.current.add(currentMonthId);
+      ensureMonthLoaded(currentMonthId, true).catch(() => {});
     }
   }, [currentMonthId, ensureMonthLoaded]);
   const [isConfiguringNewMonth, setIsConfiguringNewMonth] = useState(false);
@@ -2376,6 +2478,7 @@ export default function AdminPanel({
       setBillingMonthsList([]);
       currentMonthIdRef.current = '';
       setCurrentMonthId('');
+      revalidatedMonthsOnSessionRef.current.clear();
     }
 
     let freshMarkedForScope = false;
@@ -2490,8 +2593,16 @@ export default function AdminPanel({
 
       if (targetMonthId) {
         const existingDoc = billingMonthsRef.current.find(m => m.id === targetMonthId);
-        if (!existingDoc || !existingDoc.rowsLoaded) {
-          ensureMonthLoaded(targetMonthId).then(() => {
+        const needsSessionRevalidation = isFresh !== false && !revalidatedMonthsOnSessionRef.current.has(targetMonthId);
+        if (!existingDoc || !existingDoc.rowsLoaded || needsSessionRevalidation) {
+          if (isFresh !== false) {
+            revalidatedMonthsOnSessionRef.current.add(targetMonthId);
+          }
+          if (existingDoc && existingDoc.rowsLoaded) {
+            // Cached month is already visible — mark fresh immediately while force-syncing latest billing_rows from Supabase
+            markBillingFreshOnce();
+          }
+          ensureMonthLoaded(targetMonthId, Boolean(existingDoc && existingDoc.rowsLoaded)).then(() => {
             markBillingFreshOnce();
 
             // Schedule low-priority background load of immediate previous month (by createdAt)
@@ -2510,6 +2621,10 @@ export default function AdminPanel({
             setIsBillingMonthsLoading(false);
           });
         } else {
+          if (isFresh !== false) {
+            revalidatedMonthsCompleteRef.current.add(targetMonthId);
+            setRevalidatedVersion(v => v + 1);
+          }
           markBillingFreshOnce();
         }
       } else {
@@ -2520,8 +2635,64 @@ export default function AdminPanel({
         }
       }
     }, activeDealerId);
-    return () => unsubscribe();
-  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId, ensureMonthLoaded, applyPendingSwitchesToMonth]);
+
+    const unsubscribeRowUpdates = pocketbaseService.subscribeBillingRowUpdates((upd) => {
+      if (!upd || !upd.monthId || !upd.clientId) return;
+      const resolvedDealer = activeDealerId || 'main';
+      if (activeDealerId && upd.dealerId && upd.dealerId !== resolvedDealer) return;
+
+      const switchBucketKey = `${upd.monthId}::${resolvedDealer}`;
+      const pendingBucket = pendingSwitchUpdatesByMonthRef.current.get(switchBucketKey);
+      const inFlightBucket = inFlightSwitchValuesRef.current.get(switchBucketKey);
+      if ((pendingBucket && pendingBucket.has(upd.clientId)) || (inFlightBucket && inFlightBucket.has(upd.clientId))) {
+        return;
+      }
+
+      setBillingMonths(prev => {
+        const mIdx = prev.findIndex(m => (m?.id || m?.month_id) === upd.monthId);
+        if (mIdx === -1 || !Array.isArray(prev[mIdx].rows)) return prev;
+
+        let rowChanged = false;
+        const nextRows = prev[mIdx].rows.map((r: any) => {
+          const rCid = String(r.clientId || r.client_id || r.id || '').trim();
+          const rUname = r.username ? String(r.username).trim().toLowerCase() : '';
+          const matches =
+            rCid === upd.clientId ||
+            (upd.username && rUname && rUname === String(upd.username).trim().toLowerCase());
+          if (!matches) return r;
+
+          const nextRow = { ...r };
+          if (typeof upd.switchOn === 'boolean' && (nextRow.switchOn !== upd.switchOn || nextRow.switch_on !== upd.switchOn)) {
+            nextRow.switchOn = upd.switchOn;
+            nextRow.switch_on = upd.switchOn;
+            rowChanged = true;
+          }
+          if (upd.raw) {
+            if (upd.raw.payment_status !== undefined && nextRow.paymentStatus !== upd.raw.payment_status) {
+              nextRow.paymentStatus = upd.raw.payment_status;
+              rowChanged = true;
+            }
+            if (upd.raw.payment_received !== undefined && Number(nextRow.paymentReceived || 0) !== Number(upd.raw.payment_received || 0)) {
+              nextRow.paymentReceived = Number(upd.raw.payment_received || 0);
+              rowChanged = true;
+            }
+          }
+          return rowChanged ? nextRow : r;
+        });
+
+        if (!rowChanged) return prev;
+        const nextMonths = [...prev];
+        nextMonths[mIdx] = applyPendingSwitchesToMonth({ ...prev[mIdx], rows: nextRows }, resolvedDealer);
+        syncBillingMonthCache(upd.monthId, nextMonths[mIdx].rows);
+        return nextMonths;
+      });
+    }, activeDealerId);
+
+    return () => {
+      unsubscribe();
+      unsubscribeRowUpdates();
+    };
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId, ensureMonthLoaded, applyPendingSwitchesToMonth, syncBillingMonthCache]);
 
   // Safeguard: never leave billing freshness false when a month with rowsLoaded === true exists for the current scope
   useEffect(() => {
@@ -2838,39 +3009,51 @@ export default function AdminPanel({
       const existingMonthsList = await pocketbaseService.getBillingMonthsList(dealer);
 
       let prevMonthId: string | null = null;
-      if (existingMonthsList && existingMonthsList.length > 0) {
-        prevMonthId = existingMonthsList[0].id;
-      } else if (billingMonthsList && billingMonthsList.length > 0) {
-        prevMonthId = billingMonthsList[0].id;
+      if (currentMonthId && currentMonthId !== monthId) {
+        prevMonthId = currentMonthId;
       } else if (billingMonths && billingMonths.length > 0) {
-        const sorted = [...billingMonths].sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
-        prevMonthId = sorted[0].id;
+        const sorted = [...billingMonths].filter(m => m.id !== monthId).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+        if (sorted.length > 0) prevMonthId = sorted[0].id;
+      } else if (existingMonthsList && existingMonthsList.length > 0) {
+        const sorted = [...existingMonthsList].filter(m => m.id !== monthId).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+        if (sorted.length > 0) prevMonthId = sorted[0].id;
+      } else if (billingMonthsList && billingMonthsList.length > 0) {
+        const sorted = [...billingMonthsList].filter(m => m.id !== monthId).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+        if (sorted.length > 0) prevMonthId = sorted[0].id;
       }
 
       let prevRowsRaw: any[] = [];
       if (prevMonthId) {
-        const rawPrevMonthDoc = await pocketbaseService.getBillingMonthDirect(prevMonthId, dealer);
-        if (!rawPrevMonthDoc || !Array.isArray(rawPrevMonthDoc.rows)) {
+        let sourceDoc = billingMonths.find(m => m.id === prevMonthId);
+        if (!sourceDoc || !Array.isArray(sourceDoc.rows) || sourceDoc.rows.length === 0) {
+          sourceDoc = await pocketbaseService.getBillingMonthDirect(prevMonthId, dealer);
+        }
+        if (!sourceDoc || !Array.isArray(sourceDoc.rows)) {
           toast.error("Could not load the previous month, nothing was created");
           return;
         }
-        const prevMonthDoc = applyPendingSwitchesToMonth(rawPrevMonthDoc, dealer);
+        const prevMonthDoc = applyPendingSwitchesToMonth(sourceDoc, dealer);
         prevRowsRaw = prevMonthDoc.rows;
       }
 
       const prevRowsByClientId = new Map<string, any>();
+      const prevRowsByUsername = new Map<string, any>();
       if (prevRowsRaw.length > 0) {
         const backfilledPrevRows = applyLegacyBackfill(prevRowsRaw, currentMasterClients);
         const { rows: deduplicatedPrevRows } = dedupeRowsByClientId(backfilledPrevRows);
         for (const r of deduplicatedPrevRows) {
           if (r.clientId) {
-            prevRowsByClientId.set(r.clientId, r);
+            prevRowsByClientId.set(String(r.clientId), r);
+          }
+          if (r.username) {
+            prevRowsByUsername.set(String(r.username).toLowerCase().trim(), r);
           }
         }
       }
 
       const rows = currentMasterClients.map((client, i) => {
-        const prevRow = prevRowsByClientId.get(client.id);
+        const prevRow = prevRowsByClientId.get(String(client.id)) ||
+          (client.username ? prevRowsByUsername.get(String(client.username).toLowerCase().trim()) : null);
 
         // 1) Fee determination
         let fee = 0;
@@ -2941,6 +3124,30 @@ export default function AdminPanel({
 
         console.log(`[AddMonth] Client ${client.username || client.name} (${client.id}): prevStatus=${prevStatus}, cr=${cr}, newFee=${newBase}`);
 
+        // Determine switchOn / switch_on: EXACT copy from previous / preview sheet row
+        let targetSwitchOn = true;
+        if (prevRow) {
+          if (typeof prevRow.switch_on === 'boolean') {
+            targetSwitchOn = prevRow.switch_on;
+          } else if (typeof prevRow.switchOn === 'boolean') {
+            targetSwitchOn = prevRow.switchOn;
+          } else if (prevRow.switch_on === 0 || prevRow.switch_on === '0' || prevRow.switch_on === 'false') {
+            targetSwitchOn = false;
+          } else if (prevRow.switchOn === 0 || prevRow.switchOn === '0' || prevRow.switchOn === 'false') {
+            targetSwitchOn = false;
+          } else if (prevRow.switch_on === 1 || prevRow.switch_on === '1' || prevRow.switch_on === 'true') {
+            targetSwitchOn = true;
+          } else if (prevRow.switchOn === 1 || prevRow.switchOn === '1' || prevRow.switchOn === 'true') {
+            targetSwitchOn = true;
+          } else if (prevRow.paymentStatus === 'tdc' || prevRow.status === 'tdc') {
+            targetSwitchOn = false;
+          } else if (SWITCH_OFF_STATUSES.includes(newStatus)) {
+            targetSwitchOn = false;
+          }
+        } else if (SWITCH_OFF_STATUSES.includes(newStatus)) {
+          targetSwitchOn = false;
+        }
+
         const clientPhone = client.mobileNumber || client.number || client.phone || (prevRow ? (prevRow.mobileNumber || prevRow.phone) : '') || '';
         return {
           ...(prevRow || {}),
@@ -2964,8 +3171,8 @@ export default function AdminPanel({
           totalAmount: newTotal,
           paymentReceived: 0,
           paymentStatus: newStatus,
-          switchOn: SWITCH_OFF_STATUSES.includes(newStatus) ? false : true,
-          switch_on: SWITCH_OFF_STATUSES.includes(newStatus) ? false : true,
+          switchOn: targetSwitchOn,
+          switch_on: targetSwitchOn,
           comments: '',
           occ: prevRow?.occ || client.occ || 'personal',
           sag: prevRow?.sag || client.sag || '0',
@@ -3238,17 +3445,20 @@ export default function AdminPanel({
 
         billingMonthsRef.current = nextMonths;
         setBillingMonths(nextMonths);
+        syncBillingMonthCache(currentMonthId, nextRows);
 
         const clientId = targetRow.clientId || targetRow.client_id || targetRow.id;
         if (clientId) {
           enqueueSwitchUpdate(
             currentMonthId,
-            activeDealerId,
+            currentDoc.dealerId || activeDealerId,
             String(clientId),
             targetRow.username,
             Boolean(val),
             prevOn,
-            rowIndex
+            rowIndex,
+            targetRow,
+            Boolean(forceImmediate)
           );
         }
 
@@ -3288,12 +3498,14 @@ export default function AdminPanel({
           if (clientId) {
             enqueueSwitchUpdate(
               currentMonthId,
-              activeDealerId,
+              currentDoc.dealerId || activeDealerId,
               String(clientId),
               targetRow.username,
               false,
               Boolean(currentRows[rowIndex].switchOn),
-              rowIndex
+              rowIndex,
+              targetRow,
+              true
             );
           }
         } else {
@@ -4456,6 +4668,7 @@ export default function AdminPanel({
   useEffect(() => {
     if (!currentMonthId || !activeMonthDoc || !masterClients || masterClients.length === 0) return;
     if (!isBillingDataFresh.current) return;
+    if (!revalidatedMonthsCompleteRef.current.has(currentMonthId)) return;
     
     const dbClients = masterClients;
     const existingRowsRaw = activeMonthDoc.rows || [];
@@ -4604,7 +4817,7 @@ export default function AdminPanel({
          console.warn("Background auto-sync failed:", err);
       });
     }
-  }, [masterClients, currentMonthId, activeDealerId, activeMonthDoc?.excludedClientKeys]);
+  }, [masterClients, currentMonthId, activeDealerId, activeMonthDoc?.excludedClientKeys, revalidatedVersion]);
 
 
   const activeRows = useMemo(() => {
@@ -6425,7 +6638,7 @@ export default function AdminPanel({
                 <div className="px-6 py-4 border-b border-[var(--neu-border)] bg-[var(--neu-surface)]">
                    <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">{isSubDealerUser ? 'Subaccounts Directory' : 'Link Access Directory'}</h4>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto gts-scroll-xy">
                   <table className="w-full text-left">
                     <thead className="bg-[var(--neu-surface)]">
                     <tr className="border-b border-[var(--neu-border)]">
@@ -6897,7 +7110,7 @@ export default function AdminPanel({
                 <div className="px-6 py-4 border-b border-[var(--neu-border)] bg-[var(--neu-surface)] flex justify-between items-center">
                    <h4 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-500">Authorized Dealers Registry</h4>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto gts-scroll-xy">
                   <table className="w-full text-left whitespace-nowrap">
                     <thead className="bg-[var(--neu-surface)]">
                     <tr className="border-b border-[var(--neu-border)]">
@@ -8593,7 +8806,7 @@ export default function AdminPanel({
                 }
 
                 return (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto gts-scroll-xy">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-[var(--neu-border)] text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-50/20 dark:bg-slate-900/10">
